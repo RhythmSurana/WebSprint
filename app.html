@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ayush NAMASTE & ICD-11 Integration Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .tab-button.active {
+            background-color: #2563EB; /* blue-600 */
+            color: white;
+        }
+        #india-map svg .state {
+            fill: #D1D5DB; /* gray-300 */
+            stroke: #ffffff;
+            stroke-width: 1;
+            transition: fill 0.3s ease;
+        }
+        #india-map svg .state:hover {
+            fill: #93C5FD; /* blue-300 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <!-- ABHA Login View -->
+    <div id="login-view">
+        <div class="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+            <div class="max-w-md w-full bg-white p-8 rounded-lg shadow-md">
+                <div class="text-center mb-8">
+                     <img src="https://abdm.gov.in/assets/images/logo-abdm.svg" alt="ABDM Logo" class="mx-auto h-12 mb-4">
+                    <h1 class="text-2xl font-bold text-gray-900">Clinician Login</h1>
+                    <p class="text-gray-600">Authenticate using ABHA to access the Terminology Service</p>
+                </div>
+                <div class="space-y-6">
+                    <div>
+                        <label for="abhaId" class="block text-sm font-medium text-gray-700">ABHA ID (e.g., 12-3456-7890-1234)</label>
+                        <input type="text" id="abhaId" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500" value="12-3456-7890-1234">
+                    </div>
+                    <div>
+                        <label for="otp" class="block text-sm font-medium text-gray-700">OTP (e.g., 123456)</label>
+                        <input type="text" id="otp" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500" value="123456">
+                    </div>
+                     <p id="login-error" class="text-red-500 text-sm text-center hidden">Please fill in both fields.</p>
+                    <button id="loginButton" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        Login via OTP
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Main Application View (Initially Hidden) -->
+    <div id="app-view" class="hidden">
+        <div class="container mx-auto p-4 md:p-8">
+            
+            <!-- Header -->
+            <header class="mb-8">
+                <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Ayush Terminology Service</h1>
+                <p class="text-lg text-gray-600 mt-1">Demonstrating NAMASTE & ICD-11 Integration for a Digital Ayush Ecosystem</p>
+            </header>
+
+            <!-- Tabs -->
+            <div class="mb-6 bg-white p-2 rounded-lg shadow-sm flex space-x-2">
+                <button id="tab-clinician" class="tab-button w-full py-2 px-4 rounded-md font-semibold transition">Clinician Portal</button>
+                <button id="tab-dashboard" class="tab-button w-full py-2 px-4 rounded-md font-semibold transition">Analytics Dashboard</button>
+            </div>
+
+            <!-- Main Content -->
+            <main>
+                <!-- Clinician Portal View -->
+                <div id="view-clinician" class="view-content space-y-6">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        
+                        <!-- Left Panel: Search & Select -->
+                        <div class="bg-white p-6 rounded-lg shadow-sm">
+                            <h2 class="text-xl font-bold mb-4">1. Find Diagnosis</h2>
+                            <div class="flex space-x-2">
+                                <input type="text" id="searchInput" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search for 'fever', 'jwara', 'amavata'...">
+                                <button id="searchButton" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition font-semibold">Search</button>
+                            </div>
+                            <div id="searchResults" class="mt-4 max-h-60 overflow-y-auto">
+                                <!-- Search results will be populated here -->
+                                <p class="text-gray-500 text-center py-4">Search results will appear here.</p>
+                            </div>
+                        </div>
+
+                        <!-- Right Panel: Map, Generate & Upload -->
+                        <div class="bg-white p-6 rounded-lg shadow-sm">
+                            <h2 class="text-xl font-bold mb-4">2. Map Codes & Generate Record</h2>
+                            <div id="selectionDetails" class="space-y-4">
+                               <p class="text-gray-500 text-center py-4">Select a diagnosis from the search results to see details.</p>
+                            </div>
+                            
+                            <div id="fhirOutput" class="hidden mt-4">
+                                <h3 class="font-semibold text-lg mb-2">Generated FHIR Condition Resource</h3>
+                                <div class="bg-gray-800 text-white p-4 rounded-md max-h-64 overflow-y-auto">
+                                    <pre><code id="fhirCode"></code></pre>
+                                </div>
+                                <button id="uploadButton" class="w-full bg-green-600 text-white mt-4 py-2 rounded-md hover:bg-green-700 transition font-semibold">Add to Patient Record</button>
+                                 <div id="uploadSuccess" class="hidden mt-2 text-center text-green-700 font-semibold">
+                                    ✓ Diagnosis added to patient record. Analytics dashboard updated.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Patient Record Panel -->
+                    <div class="bg-white p-6 rounded-lg shadow-sm">
+                        <h2 class="text-xl font-bold mb-4">3. Current Patient Record (Simulated)</h2>
+                        <p class="mb-4 text-gray-600">Patient: <span class="font-semibold">Anjali Sharma</span> | ABHA ID: <span id="patientAbhaId" class="font-semibold"></span></p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-gray-50 border-b">
+                                    <tr>
+                                        <th class="p-3 font-semibold">Date Added</th>
+                                        <th class="p-3 font-semibold">NAMASTE Diagnosis</th>
+                                        <th class="p-3 font-semibold">ICD-11 Biomedical Diagnosis</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="patientProblemList">
+                                    <!-- Existing patient problems can be pre-populated or dynamically added -->
+                                    <tr class="border-b">
+                                        <td class="p-3 text-sm text-gray-600">2024-05-18</td>
+                                        <td class="p-3">Amavata (A.01.12)</td>
+                                        <td class="p-3">Rheumatoid arthritis (FB20)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analytics Dashboard View -->
+                <div id="view-dashboard" class="view-content hidden">
+                     <div class="bg-white p-6 rounded-lg shadow-sm">
+                        <div class="flex flex-col md:flex-row justify-between items-center mb-4">
+                             <h2 class="text-xl font-bold mb-4 md:mb-0">National Morbidity Dashboard</h2>
+                             <div id="dashboard-filters" class="flex space-x-2 bg-gray-200 p-1 rounded-md">
+                                <button class="filter-btn py-1 px-3 rounded-md text-sm font-semibold" data-filter="All">All Systems</button>
+                                <button class="filter-btn py-1 px-3 rounded-md text-sm font-semibold" data-filter="Ayurveda">Ayurveda</button>
+                                <button class="filter-btn py-1 px-3 rounded-md text-sm font-semibold" data-filter="Siddha">Siddha</button>
+                                <button class="filter-btn py-1 px-3 rounded-md text-sm font-semibold" data-filter="Unani">Unani</button>
+                             </div>
+                        </div>
+
+                        <!-- Stats Cards -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                <h4 class="text-sm font-semibold text-blue-800">Total Diagnoses Logged</h4>
+                                <p id="stat-total" class="text-2xl font-bold text-blue-900">0</p>
+                            </div>
+                             <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+                                <h4 class="text-sm font-semibold text-green-800">Ayurveda</h4>
+                                <p id="stat-ayurveda" class="text-2xl font-bold text-green-900">0</p>
+                            </div>
+                             <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                                <h4 class="text-sm font-semibold text-yellow-800">Siddha</h4>
+                                <p id="stat-siddha" class="text-2xl font-bold text-yellow-900">0</p>
+                            </div>
+                             <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
+                                <h4 class="text-sm font-semibold text-indigo-800">Unani</h4>
+                                <p id="stat-unani" class="text-2xl font-bold text-indigo-900">0</p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <div class="lg:col-span-2 bg-gray-50 p-4 rounded-lg">
+                                <h3 class="font-semibold mb-2 text-center">Top 5 Diagnoses (NAMASTE)</h3>
+                                <canvas id="topDiagnosesChart"></canvas>
+                            </div>
+                            <div class="bg-gray-50 p-4 rounded-lg">
+                                <h3 class="font-semibold mb-2 text-center">Morbidity Hotspots</h3>
+                                <div id="india-map" class="w-full h-full flex items-center justify-center">
+                                    <!-- Simple SVG Map of India for visualization -->
+                                    <svg viewBox="0 0 550 650" xmlns="http://www.w3.org/2000/svg">
+                                        <path id="IN-MH" class="state" d="M228.6,440.3l-12.7-1.3l-10.7-11.6l-10-18.7l-9.3-12.2l-10-11.2l-12.5-12.4l-11-20.3l-5.6-11.4l-10.7-9.5l-10.8-0.2l-7.7,11.5l-2.4,13.2l-11.2,16.4l-11.3,10l-12.2,2.8l-1.3,10.2l12.4,2.2l9.8,11.5l11.6,15.6l9.6,12.7l12.6,9.2l12.5,2.4l11.4-1.2l12.1-10.2l11.7-15.6l10.2-12.3l1.3-11.8L228.6,440.3z" data-name="Maharashtra"/>
+                                        <path id="IN-GA" class="state" d="M152.7,489.1l-1.3,10.2l-1.2-11.3L152.7,489.1z" data-name="Goa"/>
+                                        <path id="IN-KA" class="state" d="M199,552.1l-10-15.6l-11.5-12.6l-12.1-9.2l-9.6-12.7l-11.6-15.6l-9.8-11.5l-12.4-2.2l-1.2-11.3l-2.5-12.7l-10.2-16.4l-11.3-10.2l10,12.4l12,16.2l11,20.3l12,18.7l10,15.6l12,11.3l10,2.3L199,552.1z" data-name="Karnataka"/>
+                                        <path id="IN-KL" class="state" d="M199,552.1l-2.3,11.2l-12.4,15.6l-11,18.7l-10,16.4l-2.4,12.2l12.2-2.3l11.2-10.2l10-12.4l12-16.4l10-18.7l2.3-11.3L199,552.1z" data-name="Kerala"/>
+                                        <path id="IN-TN" class="state" d="M255.4,611.5l-10.8-10.2l-12.4-15.6l-11-18.7l-10-16.4l-2.4-12.2l10,12.4l12,16.2l11,20.3l12,18.7l10,15.6l12,11.3l10,2.3l2.3,11.2l-1.2,10.2L255.4,611.5z" data-name="Tamil Nadu"/>
+                                        <path id="IN-AP" class="state" d="M255.4,611.5l-2.5-12.7l-10.2-16.4l-11.3-10.2l10,12.4l12,16.2l11,20.3l12,18.7l10,15.6l12,11.3l10,2.3l2.3,11.2l-1.2,10.2l10-12.4l12-16.2l11-20.3l-10-15.6l-12.1-9.2l-9.6-12.7l-11.6-15.6l-9.8-11.5L255.4,611.5z" data-name="Andhra Pradesh"/>
+                                        <path id="IN-TG" class="state" d="M228.6,440.3l1.3,11.8l-10.2,12.3l-11.7,15.6l-12.1,10.2l-11.4,1.2l-12.5-2.4l-12.6-9.2l10,12.4l12,16.2l11,20.3l12,18.7l10,15.6l12,11.3l10,2.3l2.3,11.2L228.6,440.3z" data-name="Telangana"/>
+                                        <path id="IN-OR" class="state" d="M305,420.3l-10.7-11.6l-10-18.7l-9.3-12.2l-10-11.2l-12.5-12.4l-11-20.3l-5.6-11.4l10,12.4l12,16.2l11,20.3l12,18.7l10,15.6l12,11.3l10,2.3l2.3,11.2l-1.2,10.2L305,420.3z" data-name="Odisha"/>
+                                        <path id="IN-GJ" class="state" d="M125.6,340.3l-12.7-1.3l-10.7-11.6l-10-18.7l-9.3-12.2l-10-11.2l-12.5-12.4l-11-20.3l-5.6-11.4l-10.7-9.5l-10.8-0.2l-7.7,11.5l-2.4,13.2l-11.2,16.4l-11.3,10l-12.2,2.8l-1.3,10.2l12.4,2.2l9.8,11.5l11.6,15.6l9.6,12.7l12.6,9.2l12.5,2.4l11.4-1.2l12.1-10.2l11.7-15.6L125.6,340.3z" data-name="Gujarat"/>
+                                        <path id="IN-RJ" class="state" d="M188.6,260.3l-12.7-1.3l-10.7-11.6l-10-18.7l-9.3-12.2l-10-11.2l-12.5-12.4l-11-20.3l-5.6-11.4l-10.7-9.5l-10.8-0.2l-7.7,11.5l-2.4,13.2l11.2,16.4l11.3,10l12.2,2.8l1.3,10.2l12.4,2.2l9.8,11.5l11.6,15.6l9.6,12.7L188.6,260.3z" data-name="Rajasthan"/>
+                                        <path id="IN-MP" class="state" d="M228.6,340.3l12.7-1.3l10.7-11.6l10-18.7l9.3-12.2l10-11.2l-12.5-12.4l-11-20.3l-5.6-11.4l-10.7-9.5l-10.8-0.2l-7.7,11.5l-2.4,13.2l11.2,16.4l11.3,10l12.2,2.8l1.3,10.2L228.6,340.3z" data-name="Madhya Pradesh"/>
+                                        <path id="IN-UP" class="state" d="M288.6,260.3l-12.7-1.3l-10.7-11.6l10-18.7l9.3-12.2l10-11.2l12.5-12.4l11-20.3l5.6-11.4l10.7-9.5l10.8-0.2l7.7,11.5l2.4,13.2l-11.2,16.4l-11.3,10l-12.2,2.8l-1.3,10.2L288.6,260.3z" data-name="Uttar Pradesh"/>
+                                        <path id="IN-DL" class="state" d="M248,220.3l-2.3-1.2l3.5,0.5l-1.2-0.7Z" data-name="Delhi"/>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                     </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // --- MOCK DATA ---
+        // This simulates a database of NAMASTE terms.
+        const mockNamasteDb = [
+            { id: 1, code: 'A.55.01', term: 'Agnimandya', system: 'Ayurveda', icd11_tm2: { code: 'QA02', display: 'Spleen Qi Deficiency pattern' }, icd11_biomedical: [{ code: 'MD91', display: 'Dyspepsia' }, { code: 'ME05', display: 'Anorexia nervosa' }] },
+            { id: 2, code: 'A.01.12', term: 'Amavata', system: 'Ayurveda', icd11_tm2: { code: 'QC81', display: 'Wind-cold-damp Bi pattern' }, icd11_biomedical: [{ code: 'FB20', display: 'Rheumatoid arthritis' }, { code: 'ME81', display: 'Gout' }] },
+            { id: 3, code: 'S.10.05', term: 'Vali Gunmam', system: 'Siddha', icd11_tm2: { code: 'QB23', display: 'Liver Qi Stagnation pattern' }, icd11_biomedical: [{ code: 'DD90', display: 'Gastritis' }, { code: 'DB90', display: 'Peptic ulcer' }] },
+            { id: 4, code: 'U.12.01', term: 'Nazla Harra', system: 'Unani', icd11_tm2: { code: 'QD20', display: 'Lung-heat pattern' }, icd11_biomedical: [{ code: 'CA00', display: 'Common cold' }, { code: 'CA0G', display: 'Acute bronchitis' }] },
+            { id: 5, code: 'A.03.01', term: 'Kasa', system: 'Ayurveda', icd11_tm2: { code: 'QD21', display: 'Lung-dryness pattern' }, icd11_biomedical: [{ code: 'CB26', display: 'Cough' }] },
+            { id: 6, code: 'A.21.03', term: 'Gridhrasi', system: 'Ayurveda', icd11_tm2: { code: 'QC82', display: 'Qi and blood stagnation Bi pattern' }, icd11_biomedical: [{ code: '8A81', display: 'Sciatica' }] },
+            { id: 7, code: 'S.01.02', term: 'Erivu', system: 'Siddha', icd11_tm2: { code: 'QB24', display: 'Liver-fire flaming upward pattern' }, icd11_biomedical: [{ code: 'MD92', display: 'Gastro-oesophageal reflux disease' }] },
+            { id: 8, code: 'U.01.01', term: 'Sudae Har', system: 'Unani', icd11_tm2: { code: 'QB24', display: 'Liver-fire flaming upward pattern' }, icd11_biomedical: [{ code: '8A80', display: 'Headache' }, { code: '8A80.0', display: 'Migraine' }] },
+            { id: 9, code: 'A.02.01', term: 'Jwara', searchTerms: 'fever', system: 'Ayurveda', icd11_tm2: { code: 'QD20', display: 'Lung-heat pattern' }, icd11_biomedical: [{ code: 'MG21', display: 'Fever of unknown origin' }, { code: 'MG21', display: 'Fever, unspecified' }] },
+            { id: 10, code: 'U.05.03', term: 'Waja-ul-Mafaasil', searchTerms: 'joint pain', system: 'Unani', icd11_tm2: { code: 'QC81', display: 'Wind-cold-damp Bi pattern' }, icd11_biomedical: [{ code: 'FA30.0', display: 'Osteoarthritis of knee' }, {code: 'ME93', display: 'Arthralgia'}] }
+        ];
+
+        // This simulates a database for analytics.
+        let analyticsData = [
+            { id: 1, term: 'Agnimandya', system: 'Ayurveda', state: 'IN-MH' },
+            { id: 2, term: 'Amavata', system: 'Ayurveda', state: 'IN-KL' },
+            { id: 3, term: 'Vali Gunmam', system: 'Siddha', state: 'IN-TN' },
+            { id: 4, term: 'Nazla Harra', system: 'Unani', state: 'IN-UP' },
+            { id: 5, term: 'Amavata', system: 'Ayurveda', state: 'IN-MH' },
+            { id: 6, term: 'Kasa', system: 'Ayurveda', state: 'IN-DL' },
+            { id: 7, term: 'Gridhrasi', system: 'Ayurveda', state: 'IN-KA' },
+            { id: 8, term: 'Sudae Har', system: 'Unani', state: 'IN-UP' },
+            { id: 9, term: 'Amavata', system: 'Ayurveda', state: 'IN-GJ' },
+            { id: 10, term: 'Erivu', system: 'Siddha', state: 'IN-TN' },
+            { id: 11, term: 'Jwara', system: 'Ayurveda', state: 'IN-MH' }
+        ];
+
+        // --- GLOBAL VARIABLES ---
+        let selectedTerm = null;
+        let selectedBiomedical = null;
+        let topDiagnosesChart = null;
+
+        // --- DOM ELEMENTS ---
+        const loginView = document.getElementById('login-view');
+        const appView = document.getElementById('app-view');
+        const loginButton = document.getElementById('loginButton');
+        const abhaIdInput = document.getElementById('abhaId');
+        const otpInput = document.getElementById('otp');
+        const loginError = document.getElementById('login-error');
+        
+        const tabClinician = document.getElementById('tab-clinician');
+        const tabDashboard = document.getElementById('tab-dashboard');
+        const viewClinician = document.getElementById('view-clinician');
+        const viewDashboard = document.getElementById('view-dashboard');
+        const searchInput = document.getElementById('searchInput');
+        const searchButton = document.getElementById('searchButton');
+        const searchResults = document.getElementById('searchResults');
+        const selectionDetails = document.getElementById('selectionDetails');
+        const fhirOutput = document.getElementById('fhirOutput');
+        const fhirCode = document.getElementById('fhirCode');
+        const uploadButton = document.getElementById('uploadButton');
+        const uploadSuccess = document.getElementById('uploadSuccess');
+        const filterButtons = document.querySelectorAll('.filter-btn');
+        const patientProblemList = document.getElementById('patientProblemList');
+        const patientAbhaId = document.getElementById('patientAbhaId');
+
+
+        // --- LOGIN LOGIC ---
+        function handleLogin() {
+            const abhaId = abhaIdInput.value;
+            const otp = otpInput.value;
+
+            if (abhaId.trim() === '' || otp.trim() === '') {
+                loginError.classList.remove('hidden');
+            } else {
+                loginError.classList.add('hidden');
+                loginView.classList.add('hidden');
+                appView.classList.remove('hidden');
+                patientAbhaId.textContent = abhaId; // Pass ABHA ID to patient record
+                
+                // Initialize the main app
+                switchView('clinician');
+                initDashboard();
+            }
+        }
+
+        // --- APP UI LOGIC ---
+
+        function switchView(view) {
+            if (view === 'clinician') {
+                tabClinician.classList.add('active');
+                tabDashboard.classList.remove('active');
+                viewClinician.classList.remove('hidden');
+                viewDashboard.classList.add('hidden');
+            } else {
+                tabClinician.classList.remove('active');
+                tabDashboard.classList.add('active');
+                viewClinician.classList.add('hidden');
+                viewDashboard.classList.remove('hidden');
+                updateDashboard('All'); // Refresh dashboard on view
+            }
+        }
+        
+        // --- CLINICIAN PORTAL LOGIC ---
+        function handleSearch() {
+            const query = searchInput.value.toLowerCase();
+            if (query.length < 2) {
+                searchResults.innerHTML = `<p class="text-gray-500 text-center py-4">Please enter at least 2 characters.</p>`;
+                return;
+            }
+
+            const results = mockNamasteDb.filter(item => 
+                item.term.toLowerCase().includes(query) ||
+                (item.searchTerms && item.searchTerms.toLowerCase().includes(query))
+            );
+
+            if (results.length > 0) {
+                searchResults.innerHTML = results.map(item => `
+                    <div class="p-3 border-b hover:bg-gray-100 cursor-pointer" data-id="${item.id}">
+                        <p class="font-semibold">${item.term} <span class="text-sm text-gray-500">(${item.system})</span></p>
+                        <p class="text-sm text-gray-600">${item.code}</p>
+                    </div>
+                `).join('');
+            } else {
+                searchResults.innerHTML = `<p class="text-gray-500 text-center py-4">No results found for "${searchInput.value}".</p>`;
+            }
+        }
+
+        function handleResultClick(e) {
+            const resultDiv = e.target.closest('[data-id]');
+            if (!resultDiv) return;
+
+            const id = parseInt(resultDiv.dataset.id);
+            selectedTerm = mockNamasteDb.find(item => item.id === id);
+            selectedBiomedical = null; // Reset selection
+            displaySelectionDetails();
+        }
+
+        function displaySelectionDetails() {
+            if (!selectedTerm) return;
+            
+            selectionDetails.innerHTML = `
+                <div>
+                    <h3 class="font-semibold text-gray-800">Selected NAMASTE Term</h3>
+                    <p class="p-2 bg-gray-100 rounded-md">${selectedTerm.term} (${selectedTerm.code})</p>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-800">Mapped ICD-11 (TM2)</h3>
+                    <p class="p-2 bg-gray-100 rounded-md">${selectedTerm.icd11_tm2.display} (${selectedTerm.icd11_tm2.code})</p>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-800">Suggested ICD-11 (Biomedical)</h3>
+                    <div class="space-y-1 mt-1">
+                        ${selectedTerm.icd11_biomedical.map((bio, index) => `
+                            <label class="flex items-center p-2 bg-gray-100 rounded-md cursor-pointer hover:bg-blue-50">
+                                <input type="radio" name="biomedical" class="mr-2" value='${JSON.stringify(bio)}' ${index === 0 ? 'checked' : ''}>
+                                ${bio.display} (${bio.code})
+                            </label>
+                        `).join('')}
+                    </div>
+                </div>
+                <button id="createFhirButton" class="w-full bg-blue-600 text-white mt-2 py-2 rounded-md hover:bg-blue-700 transition font-semibold">Create FHIR Resource</button>
+            `;
+            fhirOutput.classList.add('hidden');
+            document.getElementById('createFhirButton').addEventListener('click', generateFhirResource);
+        }
+        
+        function generateFhirResource() {
+            const selectedRadio = document.querySelector('input[name="biomedical"]:checked');
+            if (!selectedRadio) {
+                alert("Please select a biomedical code.");
+                return;
+            }
+            selectedBiomedical = JSON.parse(selectedRadio.value);
+
+            const fhirResource = {
+              "resourceType": "Condition",
+              "id": "example-dual-code",
+              "meta": {
+                "profile": ["http://hl7.org/fhir/R4/StructureDefinition/Condition"]
+              },
+              "clinicalStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active" }] },
+              "verificationStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status", "code": "confirmed" }] },
+              "category": [{ "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-category", "code": "encounter-diagnosis" }] }],
+              "subject": { "reference": `Patient/${abhaIdInput.value}` },
+              "code": {
+                "text": `${selectedTerm.term} / ${selectedBiomedical.display}`,
+                "coding": [
+                  {
+                    "system": "http://your-domain/fhir/CodeSystem/NAMASTE",
+                    "code": selectedTerm.code,
+                    "display": selectedTerm.term
+                  },
+                  {
+                    "system": "http://id.who.int/icd/entity/",
+                    "code": selectedBiomedical.code,
+                    "display": selectedBiomedical.display
+                  },
+                   {
+                    "system": "http://id.who.int/icd/entity/tm2",
+                    "code": selectedTerm.icd11_tm2.code,
+                    "display": selectedTerm.icd11_tm2.display
+                  }
+                ]
+              }
+            };
+
+            fhirCode.textContent = JSON.stringify(fhirResource, null, 2);
+            fhirOutput.classList.remove('hidden');
+            uploadSuccess.classList.add('hidden');
+        }
+
+        function simulateUpload() {
+            if (!selectedTerm || !selectedBiomedical) return;
+            
+            // 1. Add to analytics data
+            const randomState = ['IN-MH', 'IN-KA', 'IN-KL', 'IN-TN', 'IN-UP', 'IN-DL', 'IN-GJ'][Math.floor(Math.random() * 7)];
+            analyticsData.push({
+                id: analyticsData.length + 1,
+                term: selectedTerm.term,
+                system: selectedTerm.system,
+                state: randomState
+            });
+            
+            // 2. Add to patient's problem list in the UI
+            const newRow = document.createElement('tr');
+            newRow.classList.add('border-b', 'bg-green-50');
+            newRow.innerHTML = `
+                <td class="p-3 text-sm text-gray-600">${new Date().toISOString().split('T')[0]}</td>
+                <td class="p-3">${selectedTerm.term} (${selectedTerm.code})</td>
+                <td class="p-3">${selectedBiomedical.display} (${selectedBiomedical.code})</td>
+            `;
+            patientProblemList.prepend(newRow); // Add to the top of the list
+
+            // 3. Show success message
+            uploadSuccess.classList.remove('hidden');
+            
+            // 4. Update dashboard in the background
+            updateDashboard('All');
+        }
+
+
+        // --- DASHBOARD LOGIC ---
+        
+        function updateDashboard(filter) {
+            // Update active filter button
+            filterButtons.forEach(btn => {
+                if(btn.dataset.filter === filter) {
+                    btn.classList.add('bg-blue-600', 'text-white');
+                } else {
+                    btn.classList.remove('bg-blue-600', 'text-white');
+                }
+            });
+
+            const filteredData = filter === 'All' ? analyticsData : analyticsData.filter(d => d.system === filter);
+
+            // 1. Update Stats
+            document.getElementById('stat-total').textContent = analyticsData.length;
+            document.getElementById('stat-ayurveda').textContent = analyticsData.filter(d => d.system === 'Ayurveda').length;
+            document.getElementById('stat-siddha').textContent = analyticsData.filter(d => d.system === 'Siddha').length;
+            document.getElementById('stat-unani').textContent = analyticsData.filter(d => d.system === 'Unani').length;
+
+
+            // 2. Update Chart
+            const termCounts = filteredData.reduce((acc, curr) => {
+                acc[curr.term] = (acc[curr.term] || 0) + 1;
+                return acc;
+            }, {});
+
+            const sortedTerms = Object.entries(termCounts).sort(([,a],[,b]) => b-a).slice(0, 5);
+            const chartLabels = sortedTerms.map(item => item[0]);
+            const chartData = sortedTerms.map(item => item[1]);
+
+            if (topDiagnosesChart) {
+                topDiagnosesChart.data.labels = chartLabels;
+                topDiagnosesChart.data.datasets[0].data = chartData;
+                topDiagnosesChart.update();
+            }
+
+
+            // 3. Update Map
+            const stateCounts = filteredData.reduce((acc, curr) => {
+                acc[curr.state] = (acc[curr.state] || 0) + 1;
+                return acc;
+            }, {});
+
+            const maxCount = Math.max(...Object.values(stateCounts), 0);
+            
+            document.querySelectorAll('#india-map .state').forEach(state => {
+                const stateId = state.id;
+                const count = stateCounts[stateId] || 0;
+                let opacity = 0;
+                if (maxCount > 0) {
+                    opacity = (count / maxCount) * 0.8 + 0.2; // Opacity from 0.2 to 1.0
+                }
+                state.style.fill = `rgba(37, 99, 235, ${opacity})`; // blue-700 with opacity
+            });
+        }
+        
+        function initDashboard() {
+            const ctx = document.getElementById('topDiagnosesChart').getContext('2d');
+            topDiagnosesChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Number of Cases',
+                        data: [],
+                        backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                        borderColor: 'rgba(37, 99, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+            updateDashboard('All');
+        }
+
+
+        // --- EVENT LISTENERS ---
+        loginButton.addEventListener('click', handleLogin);
+        tabClinician.addEventListener('click', () => switchView('clinician'));
+        tabDashboard.addEventListener('click', () => switchView('dashboard'));
+        searchButton.addEventListener('click', handleSearch);
+        searchInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') handleSearch();
+        });
+        searchResults.addEventListener('click', handleResultClick);
+        uploadButton.addEventListener('click', simulateUpload);
+        filterButtons.forEach(btn => {
+            btn.addEventListener('click', () => updateDashboard(btn.dataset.filter));
+        });
+
+        // --- INITIALIZATION ---
+        // App initialization is now handled after successful login.
+
+    </script>
+</body>
+</html>
+
